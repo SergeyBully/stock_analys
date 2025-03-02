@@ -25,15 +25,15 @@ def extend_dates_for_ML(data, interval, entry_periods):
 def indicators_switch_case(data, indicators, interval, entry_periods, future_data):
     addplot_indicators = []
     if indicators["bullish_bearish"]:
-        addplot_indicators += bullish_bearish(data)
+        addplot_indicators += bullish_bearish(data, future_data)
 
     if indicators["fibonacci_retracement"]:
-        addplot_indicators += fibonacci_retracement(data)
+        addplot_indicators += fibonacci_retracement(data, future_data)
     if indicators["bollinger_bands"]["show"] and indicators["bollinger_bands"]["window"]:  # error can occure if window less then len(data) (ValueError: zero-size array to reduction operation maximum which has no identity)
-        addplot_indicators += bollinger_bands(data, indicators["bollinger_bands"]["window"])
+        addplot_indicators += bollinger_bands(data, indicators["bollinger_bands"]["window"], future_data)
 
     if indicators["moving_averages"]["show"] and indicators["moving_averages"]["window"]:  # error can occure if window less then len(data) (ValueError: zero-size array to reduction operation maximum which has no identity)
-        addplot_indicators += moving_averages(data, indicators["moving_averages"]["window"])
+        addplot_indicators += moving_averages(data, indicators["moving_averages"]["window"], future_data)
 
     if indicators["relative_strength"]["show"] and indicators["relative_strength"]["window"]:  # error can occure if window less then len(data) (ValueError: zero-size array to reduction operation maximum which has no identity)
         addplot_indicators += relative_strength(data, indicators["relative_strength"]["window"], future_data)[1]
@@ -62,7 +62,7 @@ def generate_plot(entry_ticker, entry_start, entry_end, interval, indicators, en
     data_extended.to_csv("stock_data_extended.csv", index=True)
     mpf.plot(data_extended, type='candle', style='yahoo', volume=True, addplot=addplot_indicators)
 
-def bullish_bearish(data):
+def bullish_bearish(data, future_data):
     data['bull_egf'] = (data['Open'] < data['Close']) & (data['Open'].shift(1) > data['Close'].shift(1)) & (data['Open'] < data['Close'].shift(1)) & (data['Close'] > data['Open'].shift(1))
     data['bear_egf'] = (data['Open'] > data['Close']) & (data['Open'].shift(1) < data['Close'].shift(1)) & (data['Open'] > data['Close'].shift(1)) & (data['Close'] < data['Open'].shift(1))
 
@@ -87,14 +87,14 @@ def bullish_bearish(data):
 
     # Add markers for bullish engulfing candles (up triangles)
     if bullish_marker.dropna().any():
-        addplots.append(mpf.make_addplot(bullish_marker, type='scatter', markersize=100, marker='^', color='g', panel=0))
+        addplots.append(mpf.make_addplot(pd.concat([bullish_marker, future_data]), type='scatter', markersize=100, marker='^', color='g', panel=0))
 
     # Add markers for bearish engulfing candles (down triangles)
     if bearish_marker.dropna().any():
-        addplots.append(mpf.make_addplot(bearish_marker, type='scatter', markersize=100, marker='v', color='r', panel=0))
+        addplots.append(mpf.make_addplot(pd.concat([bearish_marker, future_data]), type='scatter', markersize=100, marker='v', color='r', panel=0))
     return addplots
 
-def fibonacci_retracement(data):
+def fibonacci_retracement(data, future_data):
     max_price = data['High'].max()
     min_price = data['Low'].min()
 
@@ -109,14 +109,13 @@ def fibonacci_retracement(data):
     }
 
     plot_fib = []
-
     for level, price in levels.items():
         plot_fib.append(
-            mpf.make_addplot([price] * len(data), color='blue', linestyle='dashed', width=0.8, label=f"Fib {level}"))
+            mpf.make_addplot(pd.concat([pd.DataFrame([price] * len(data)), future_data]), color='blue', linestyle='dashed', width=0.8, label=f"Fib {level}"))
 
     return plot_fib
 
-def bollinger_bands(data, window):
+def bollinger_bands(data, window, future_data):
     window = int(window)
     data['Middle'] = data['Close'].rolling(window=window).mean()  # Ковзне середнє
     data['Std'] = data['Close'].rolling(window=window).std()  # Стандартне відхилення
@@ -125,13 +124,13 @@ def bollinger_bands(data, window):
 
     # Додаємо Bollinger Bands на графік
     ap_bb = [
-        mpf.make_addplot(data['Upper'], color="red", label='Upper Bollinger Band'),
-        mpf.make_addplot(data['Middle'], color="gray", label='Middle Bollinger Band'),
-        mpf.make_addplot(data['Lower'], color="green", label='Lower Bollinger Band')
+        mpf.make_addplot(pd.concat([data['Upper'], future_data]), color="red", label='Upper Bollinger Band'),
+        mpf.make_addplot(pd.concat([data['Middle'], future_data]), color="gray", label='Middle Bollinger Band'),
+        mpf.make_addplot(pd.concat([data['Lower'], future_data]), color="green", label='Lower Bollinger Band')
     ]
     return ap_bb
 
-def moving_averages(data, window):
+def moving_averages(data, window, future_data):
     window = int(window)
     data['SMA'] = data['Close'].rolling(window=window).mean()
 
@@ -144,9 +143,9 @@ def moving_averages(data, window):
 
     # Додаємо ці ковзні середні до графіку
     addplots = [
-        mpf.make_addplot(data['SMA'], color='blue', width=1, panel=0, label="Simple Moving Average"),
-        mpf.make_addplot(data['EMA'], color='orange', width=1, panel=0, label="Exponential Moving Average"),
-        mpf.make_addplot(data['WMA'], color='purple', width=1, panel=0, label="Weighted Moving Average")
+        mpf.make_addplot(pd.concat([data['SMA'], future_data]), color='blue', width=1, panel=0, label="Simple Moving Average"),
+        mpf.make_addplot(pd.concat([data['EMA'], future_data]), color='orange', width=1, panel=0, label="Exponential Moving Average"),
+        mpf.make_addplot(pd.concat([data['WMA'], future_data]), color='purple', width=1, panel=0, label="Weighted Moving Average")
     ]
 
     return addplots
