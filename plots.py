@@ -19,10 +19,9 @@ def extend_dates_for_ML(data, interval, entry_periods):
         future_dates = pd.date_range(start=last_date, periods=entry_periods, freq=interval_into_freq[interval])
 
     future_data = pd.DataFrame(index=future_dates)
-
+    if future_data.index.empty:
+        future_data = None
     return future_data
-
-
 def indicators_switch_case(data, indicators, interval, entry_periods, future_data):
     addplot_indicators = []
     if indicators["bullish_bearish"]:
@@ -50,7 +49,6 @@ def generate_plot(entry_ticker, entry_start, entry_end, interval, indicators, en
     data.dropna(inplace=True)
 
     future_data = extend_dates_for_ML(data, interval, entry_periods)
-    addplot_indicators = indicators_switch_case(data, indicators, interval, entry_periods, future_data)
 
     data_extended = pd.concat([data, future_data])
 
@@ -58,9 +56,10 @@ def generate_plot(entry_ticker, entry_start, entry_end, interval, indicators, en
     data.columns = column_names
     data_extended.columns = column_names
 
+    addplot_indicators = indicators_switch_case(data, indicators, interval, entry_periods, future_data)
+
     # Just for easier debugging
     data_extended.to_csv("stock_data_extended.csv", index=True)
-
     mpf.plot(data_extended, type='candle', style='yahoo', volume=True, addplot=addplot_indicators)
 
 def bullish_bearish(data):
@@ -168,6 +167,8 @@ def relative_strength(data, window, future_data = None):
     rsi_30 = pd.Series(30, index=rsi.index)  # рівень перепродажу
     rsi_70 = pd.Series(70, index=rsi.index)  # рівень перекупленості
 
+    print(rsi)
+    print(future_data)
     # Створення графіка RSI
     plot_rsi = []
     plot_rsi.append(mpf.make_addplot(pd.concat([rsi, future_data]), panel=1, color='purple', label="RSI"))
@@ -177,27 +178,26 @@ def relative_strength(data, window, future_data = None):
 
 def predict_rsi(data, interval, entry_periods, window=14, past_days=10):
     rsi_values = relative_strength(data, window)[0]
-    print("yoy6")
+
     # Створюємо ознаки: беремо попередні `past_days` значень RSI для прогнозу
     X = np.array([rsi_values.shift(i) for i in range(1, past_days + 1)]).T
     y = rsi_values.shift(-1)  # Прогнозуємо наступне значення RSI
-    print(X)
-    print(y)
+
     # Видаляємо NaN-значення
     mask = ~np.isnan(X).any(axis=1) & ~np.isnan(y)
     X, y = X[mask], y[mask]
-    print("yoy4")
+
     # Розділяємо дані на train/test
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-    print("yoy3")
+
     # Навчаємо модель
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
-    print("yoy2")
+
     # Передбачаємо RSI на `future_steps` днів уперед
     future_rsi = []
     last_values = X[-1].tolist()
-    print("yoy1")
+
     for _ in range(entry_periods):
         next_rsi = model.predict(np.array(last_values).reshape(1, -1))[0]
         future_rsi.append(next_rsi)
@@ -205,15 +205,13 @@ def predict_rsi(data, interval, entry_periods, window=14, past_days=10):
         # Оновлюємо останні значення для наступного прогнозу
         last_values.pop(0)
         last_values.append(next_rsi)
-    print("yoy")
+
     # Додаємо прогнозовані значення в DataFrame
     future_dates = pd.date_range(start=data.index[-1], periods=entry_periods + 1, freq=interval_into_freq[interval])[1:]
-    future_df = pd.DataFrame({'Close': future_rsi}, index=future_dates)
+    future_df = pd.DataFrame({'Date': future_dates, 'Close': future_rsi}).set_index('Date')
 
     all_dates_df = pd.concat([rsi_values, future_df])
-    print(all_dates_df)
     plot_rsi = []
     plot_rsi.append(
         mpf.make_addplot(all_dates_df, panel=1, color='blue', linestyle='dotted', width=1.2, label="Predicted RSI"))
-    print(plot_rsi)
     return plot_rsi

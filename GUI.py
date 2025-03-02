@@ -128,8 +128,9 @@ class GUI:
                                                                              "window": self.entry_window_relative_strength.get()},
                                                                        "forest_regression": {
                                                                              "show": self.show_forest_regression.get()}
-                                                                       },
-                                                             self.entry_periods.get()))
+                                                                       }
+                                                             ,self.entry_periods.get()
+                                                             ))
         self.button.grid(row=0, column=0, columnspan=2)
 
     def __init__(self, root):
