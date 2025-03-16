@@ -4,7 +4,16 @@ from dateutil.relativedelta import relativedelta
 from datetime import datetime
 from plots import generate_plot
 
+
 class GUI:
+    def __init__(self, root):
+        self.subentry_size = 60
+        # Init all frames
+        self.input_frame(root)
+        self.checkbox_indicators_frame(root)
+        self.checkbox_ML_frame(root)
+        self.button_frame(root)
+
     def input_frame(self, root):
         # Frame for ticker, interval and start/end date
         self.input_frame = ctk.CTkFrame(root)
@@ -105,14 +114,22 @@ class GUI:
                                                         variable=self.show_forest_regression)
         self.checkbox_forest_regression.grid(row=0, column=0, padx=5, pady=5, sticky='nw')
 
+        # ARIMA checkbox
+        self.show_ARIMA = ctk.BooleanVar(value=False)
+        self.checkbox_ARIMA = ctk.CTkCheckBox(self.checkbox_ML_frame, text="Show ARIMA",
+                                                          variable=self.show_ARIMA)
+        self.checkbox_ARIMA.grid(row=1, column=0, padx=5, pady=5, sticky='nw')
+
         # Period/steps window entry
         self.entry_periods = ctk.CTkEntry(self.checkbox_ML_frame, width=self.subentry_size, placeholder_text="Window")
         self.entry_periods.grid(row=0, column=1, padx=5, pady=5)
         self.entry_periods.insert(0, "5")
 
+
+
     def button_frame(self, root):
         self.button_frame = ctk.CTkFrame(root)
-        self.button_frame.grid(row=1, column=0, padx=20, pady=20, sticky='es')
+        self.button_frame.grid(row=1, column=1, padx=20, pady=20)
         self.button = ctk.CTkButton(self.button_frame, text="Show Graph",
                                command=lambda: generate_plot(self.dropdown_ticker.get(), self.entry_start.get_date(), self.entry_end.get_date(), self.dropdown_interval.get(), \
                                                              {"bullish_bearish": self.show_bullish_bearish.get(),
@@ -127,20 +144,13 @@ class GUI:
                                                                              "show": self.show_relative_strength.get(),
                                                                              "window": self.entry_window_relative_strength.get()},
                                                                        "forest_regression": {
-                                                                             "show": self.show_forest_regression.get()}
-                                                                       }
-                                                             ,self.entry_periods.get()
+                                                                             "show": self.show_forest_regression.get()},
+                                                                       "ARIMA": {
+                                                                             "show": self.show_ARIMA.get()}
+                                                                       },
+                                                             self.entry_periods.get()
                                                              ))
-        self.button.grid(row=0, column=0, columnspan=2)
-
-    def __init__(self, root):
-        self.subentry_size = 60
-        # Init all frames
-        self.input_frame(root)
-        self.checkbox_indicators_frame(root)
-        self.checkbox_ML_frame(root)
-        self.button_frame(root)
-
+        self.button.grid(row=0, column=0)
 
 
 def start_GUI():

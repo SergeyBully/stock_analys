@@ -2,6 +2,8 @@ import yfinance as yf
 import mplfinance as mpf
 import pandas as pd
 import numpy as np
+from statsmodels.tsa.arima.model import ARIMA
+from sklearn.metrics import mean_absolute_error
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 
@@ -39,7 +41,12 @@ def indicators_switch_case(data, indicators, interval, entry_periods, future_dat
         addplot_indicators += relative_strength(data, indicators["relative_strength"]["window"], future_data)[1]
 
     if indicators["forest_regression"]["show"]:
-        addplot_indicators += predict_rsi(data, interval, entry_periods)
+        addplot_indicators += predict_rsi_RandomForestRegressor(data, interval, entry_periods)
+
+    if indicators["ARIMA"]["show"]:
+        addplot_indicators += predict_rsi_ARIMA(data, interval, entry_periods)
+        # addplot_indicators += predict_rsi_RandomForestRegressor(data, interval, entry_periods)
+    print(f"addpl = \n{addplot_indicators}")
     return addplot_indicators
 
 def generate_plot(entry_ticker, entry_start, entry_end, interval, indicators, entry_periods):
@@ -60,17 +67,19 @@ def generate_plot(entry_ticker, entry_start, entry_end, interval, indicators, en
 
     # Just for easier debugging
     data_extended.to_csv("stock_data_extended.csv", index=True)
+    # style = mpf.make_mpf_style(base_mpf_style='yahoo', rc={'legend.loc': 'upper left'})
+    print(f"Dat ext = {data_extended}")
     mpf.plot(data_extended, type='candle', style='yahoo', volume=True, addplot=addplot_indicators)
 
 def bullish_bearish(data, future_data):
     data['bull_egf'] = (data['Open'] < data['Close']) & (data['Open'].shift(1) > data['Close'].shift(1)) & (data['Open'] < data['Close'].shift(1)) & (data['Close'] > data['Open'].shift(1))
     data['bear_egf'] = (data['Open'] > data['Close']) & (data['Open'].shift(1) < data['Close'].shift(1)) & (data['Open'] > data['Close'].shift(1)) & (data['Close'] < data['Open'].shift(1))
 
-    # Додавання стовпців для маркерів
+    # Adding columns for markers
     data['marker_bull_egf'] = None
     data['marker_bear_egf'] = None
 
-    # Маркування позицій
+    # Position marking
     for i in range(1, len(data)):
         if data['bull_egf'].iloc[i]:
             data['marker_bull_egf'].iloc[i] = data['Low'].iloc[i]
@@ -117,12 +126,11 @@ def fibonacci_retracement(data, future_data):
 
 def bollinger_bands(data, window, future_data):
     window = int(window)
-    data['Middle'] = data['Close'].rolling(window=window).mean()  # Ковзне середнє
-    data['Std'] = data['Close'].rolling(window=window).std()  # Стандартне відхилення
-    data['Upper'] = data['Middle'] + (2 * data['Std'])  # Верхня межа
-    data['Lower'] = data['Middle'] - (2 * data['Std'])  # Нижня межа
+    data['Middle'] = data['Close'].rolling(window=window).mean()  # Moving average
+    data['Std'] = data['Close'].rolling(window=window).std()  # Standard deviation
+    data['Upper'] = data['Middle'] + (2 * data['Std'])  # Upper limit
+    data['Lower'] = data['Middle'] - (2 * data['Std'])  # Lower limit
 
-    # Додаємо Bollinger Bands на графік
     ap_bb = [
         mpf.make_addplot(pd.concat([data['Upper'], future_data]), color="red", label='Upper Bollinger Band'),
         mpf.make_addplot(pd.concat([data['Middle'], future_data]), color="gray", label='Middle Bollinger Band'),
@@ -132,16 +140,16 @@ def bollinger_bands(data, window, future_data):
 
 def moving_averages(data, window, future_data):
     window = int(window)
+    # SMA
     data['SMA'] = data['Close'].rolling(window=window).mean()
 
-    # EMA (Експоненціально згладжене середнє)
+    # EMA
     data['EMA'] = data['Close'].ewm(span=window, adjust=False).mean()
 
-    # WMA (Зважене ковзне середнє)
+    # WMA
     weights = range(1, window + 1)
     data['WMA'] = data['Close'].rolling(window=window).apply(lambda prices: sum(prices * weights) / sum(weights), raw=True)
 
-    # Додаємо ці ковзні середні до графіку
     addplots = [
         mpf.make_addplot(pd.concat([data['SMA'], future_data]), color='blue', width=1, panel=0, label="Simple Moving Average"),
         mpf.make_addplot(pd.concat([data['EMA'], future_data]), color='orange', width=1, panel=0, label="Exponential Moving Average"),
@@ -162,38 +170,39 @@ def relative_strength(data, window, future_data = None):
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
 
-    # Додавання рівнів для покупок та продажів
-    rsi_30 = pd.Series(30, index=rsi.index)  # рівень перепродажу
-    rsi_70 = pd.Series(70, index=rsi.index)  # рівень перекупленості
+    # Adding levels for purchases and sales
+    if future_data is not None:
+        rsi_30 = pd.Series(30, index=rsi.index.append(future_data.index))  # oversold level
+        rsi_70 = pd.Series(70, index=rsi.index.append(future_data.index))  # overbought level
+    else:
+        rsi_30 = pd.Series(30, index=rsi.index)  # oversold level if future_data None
+        rsi_70 = pd.Series(70, index=rsi.index)  # overbought level if future_data None
 
-    print(rsi)
-    print(future_data)
     # Створення графіка RSI
     plot_rsi = []
     plot_rsi.append(mpf.make_addplot(pd.concat([rsi, future_data]), panel=1, color='purple', label="RSI"))
-    plot_rsi.append(mpf.make_addplot(pd.concat([rsi_30, future_data]), panel=1, color='green', linestyle='dashed', width=0.8, label="Buy Level (30)"))
-    plot_rsi.append(mpf.make_addplot(pd.concat([rsi_70, future_data]), panel=1, color='red', linestyle='dashed', width=0.8, label="Sell Level (70)"))
+    plot_rsi.append(mpf.make_addplot(rsi_30, panel=1, color='green', linestyle='dashed', width=0.8, label="Buy Level (30)"))
+    plot_rsi.append(mpf.make_addplot(rsi_70, panel=1, color='red', linestyle='dashed', width=0.8, label="Sell Level (70)"))
+    print(f"RSI = \n{pd.concat([rsi, future_data])}")
     return rsi, plot_rsi
 
-def predict_rsi(data, interval, entry_periods, window=14, past_days=10):
+def predict_rsi_RandomForestRegressor(data, interval, entry_periods, window=14, past_days=10):
     rsi_values = relative_strength(data, window)[0]
 
-    # Створюємо ознаки: беремо попередні `past_days` значень RSI для прогнозу
     X = np.array([rsi_values.shift(i) for i in range(1, past_days + 1)]).T
-    y = rsi_values.shift(-1)  # Прогнозуємо наступне значення RSI
+    y = rsi_values.shift(-1)
 
-    # Видаляємо NaN-значення
     mask = ~np.isnan(X).any(axis=1) & ~np.isnan(y)
     X, y = X[mask], y[mask]
 
-    # Розділяємо дані на train/test
+    # Splitting the data into train/test
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-    # Навчаємо модель
+    # Train the model
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
 
-    # Передбачаємо RSI на `future_steps` днів уперед
+    # Predict RSI for `future_steps` days ahead
     future_rsi = []
     last_values = X[-1].tolist()
 
@@ -201,16 +210,48 @@ def predict_rsi(data, interval, entry_periods, window=14, past_days=10):
         next_rsi = model.predict(np.array(last_values).reshape(1, -1))[0]
         future_rsi.append(next_rsi)
 
-        # Оновлюємо останні значення для наступного прогнозу
+        # Update the latest values for the next forecast
         last_values.pop(0)
         last_values.append(next_rsi)
 
-    # Додаємо прогнозовані значення в DataFrame
+    # Add predicted values to DataFrame
     future_dates = pd.date_range(start=data.index[-1], periods=entry_periods + 1, freq=interval_into_freq[interval])[1:]
     future_df = pd.DataFrame({'Date': future_dates, 'Close': future_rsi}).set_index('Date')
+
 
     all_dates_df = pd.concat([rsi_values, future_df])
     plot_rsi = []
     plot_rsi.append(
-        mpf.make_addplot(all_dates_df, panel=1, color='blue', linestyle='dotted', width=1.2, label="Predicted RSI"))
+        mpf.make_addplot(all_dates_df, panel=1, color='blue', linestyle='dotted', width=0.9, label="Random Forest Regressor RSI"))
+    return plot_rsi
+
+def predict_rsi_ARIMA(data, interval, entry_periods, window=14, past_days=10):
+    rsi_values = relative_strength(data, window)[0]
+
+    train_ratio = 0.8
+    train_size = int(len(rsi_values) * train_ratio)
+    train, test = rsi_values.iloc[:train_size], rsi_values.iloc[train_size:]
+
+    p, d, q = 5, 1, 2 #Auto arima will not work here
+
+    model = ARIMA(train, order=(p, d, q))
+    model_fit = model.fit()
+
+    future_dates = pd.date_range(start=data.index[-1], periods=entry_periods + 1, freq=interval_into_freq[interval])[1:]
+    if entry_periods > 0:
+        future_rsi = model_fit.forecast(steps=entry_periods)
+    else:
+        return []
+
+    future_df = pd.DataFrame({'Date': future_dates, 'Close': future_rsi}).set_index('Date')
+
+    # MAE for test data
+    predicted_test = model_fit.predict(start=len(train), end=len(train) + len(test) - 1)
+    mae = mean_absolute_error(test, predicted_test)
+    print(f"Mean Absolute Error: {mae:.4f}")
+
+    plot_rsi = []
+    plot_rsi.append(
+        mpf.make_addplot(pd.concat([rsi_values, future_df]), panel=1, color='red', linestyle='dotted', width=0.9, label=f"ARIMA RSI\nMEA = {mae:.4f}"))
+    print(f"RSI ext = \n{pd.concat([rsi_values, future_df])}")
     return plot_rsi

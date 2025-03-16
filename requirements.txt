@@ -1,0 +1,8 @@
+yfinance
+mplfinance
+pandas
+numpy
+statsmodels
+scikit-learn
+customtkinter
+python-dateutil
